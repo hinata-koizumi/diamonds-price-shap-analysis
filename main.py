@@ -9,7 +9,7 @@ from sklearn.metrics import mean_absolute_error, r2_score
 import shap
 import os
 
-# Set random seed for reproducibility
+# 再現性のための乱数シードを設定
 np.random.seed(42)
 
 def create_results_dir():
@@ -20,7 +20,7 @@ def load_and_preprocess():
     print("Loading and preprocessing data...")
     df = pd.read_csv('data/diamonds.csv')
     
-    # Ordinal Encoding
+    # 順序エンコーディング
     cut_mapping = {'Fair': 0, 'Good': 1, 'Very Good': 2, 'Premium': 3, 'Ideal': 4}
     color_mapping = {'J': 0, 'I': 1, 'H': 2, 'G': 3, 'F': 4, 'E': 5, 'D': 6}
     clarity_mapping = {'I1': 0, 'SI2': 1, 'SI1': 2, 'VS2': 3, 'VS1': 4, 'VVS2': 5, 'VVS1': 6, 'IF': 7}
@@ -40,7 +40,7 @@ def train_base_model(df):
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
-    # Using 100 trees as per original script
+    # 元のスクリプトに従って100本の木を使用
     rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
     rf.fit(X_train, y_train)
     
@@ -54,7 +54,7 @@ def train_base_model(df):
     print(f"MAE: ${mae:.2f}")
     print(f"Mean Error Rate: {error_rate:.1f}%")
     
-    # Feature Importance Plot
+    # 特徴量重要度のプロット
     importances = rf.feature_importances_
     indices = np.argsort(importances)[::-1]
     feature_names = np.array(features)
@@ -74,7 +74,7 @@ def robust_validation(df):
     features = ['carat', 'cut_enc', 'color_enc', 'clarity_enc', 'depth', 'table', 'x', 'y', 'z']
     target = 'price'
     
-    # 0.05 step bins
+    # 0.05刻みのビン
     df['carat_bin'] = (df['carat'] / 0.05).astype(int)
     groups = df['carat_bin'].values
     X = df[features]
@@ -87,7 +87,7 @@ def robust_validation(df):
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
         
-        # Reduced estimators for speed in robust check
+        # ロバストチェックの速度向上のため推定器数を削減
         rf = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1)
         rf.fit(X_train, y_train)
         score = r2_score(y_test, rf.predict(X_test))
@@ -124,7 +124,7 @@ def exp_no_carat(df):
 
 def exp_interactions(rf, X_train):
     print("\n--- 4.2.2 Amplification Effect of Quality (Carat x Clarity) ---")
-    # Using small sample for SHAP speed
+    # SHAPの速度向上のため小サンプルを使用
     X_shap = X_train.sample(500, random_state=42)
     explainer = shap.TreeExplainer(rf)
     shap_values = explainer.shap_values(X_shap)
@@ -164,27 +164,27 @@ def exp_magic_number(rf, df):
     print("\n--- 4.2.4 Verification of Threshold Effect (0.99 vs 1.00) ---")
     features = ['carat', 'cut_enc', 'color_enc', 'clarity_enc', 'depth', 'table', 'x', 'y', 'z']
     
-    # Use global median for baseline features (Color, Clarity, etc.)
+    # ベースライン特徴量（カラー、クラリティなど）にグローバル中央値を使用
     base_values = df[features].median()
     
-    # Force 1.00ct and typical dimensions for 1.00ct
+    # 1.00カラットと1.00カラットの典型的な寸法を強制設定
     base_values['carat'] = 1.00
-    # Median dimensions for 1.00-1.05ct to be realistic
+    # 現実的な1.00-1.05カラットの中央値寸法
     median_1ct = df[(df['carat'] >= 1.00) & (df['carat'] <= 1.05)][['x', 'y', 'z']].median()
     base_values['x'] = median_1ct['x']
     base_values['y'] = median_1ct['y']
     base_values['z'] = median_1ct['z']
     
-    # Simulation
-    # Case 1: 1.00 ct
+    # シミュレーション
+    # ケース1: 1.00カラット
     row_1 = base_values.copy()
     row_1['carat'] = 1.00
     pred_1 = rf.predict(pd.DataFrame([row_1]))[0]
     
-    # Case 2: 0.99 ct (Physically scaled)
+    # ケース2: 0.99カラット（物理的にスケーリング）
     row_99 = base_values.copy()
     row_99['carat'] = 0.99
-    # Scale x, y, z by cube root of weight ratio
+    # 重量比の立方根でx, y, zをスケーリング
     scale_factor = (0.99 / 1.00) ** (1/3)
     row_99['x'] = row_1['x'] * scale_factor
     row_99['y'] = row_1['y'] * scale_factor
@@ -208,26 +208,25 @@ def main():
     create_results_dir()
     df = load_and_preprocess()
     
-    # 3.1 & 4.1 Baseline Model
-    # 3.1 & 4.1 Baseline Model
+    # 3.1 & 4.1 ベースラインモデル
     rf_base, X_train, X_test, y_train, y_test = train_base_model(df)
     
-    # 5. Robustness
+    # 5. ロバストネス
     robust_validation(df)
     
-    # 4.2.1 No Carat
+    # 4.2.1 カラットなし
     exp_no_carat(df)
     
-    # 4.2.2 Interactions
+    # 4.2.2 相互作用
     exp_interactions(rf_base, X_train)
     
-    # 4.2.3 Unit Price
+    # 4.2.3 単価
     exp_unit_price(df)
     
-    # 4.2.4 Magic Number
+    # 4.2.4 マジックナンバー
     exp_magic_number(rf_base, df)
     
-    # 4.2.5 Cut Distribution
+    # 4.2.5 カット分布
     exp_cut_distribution(df)
     
     print("\nAnalysis Complete. All artifacts saved in 'results/'.")
